@@ -1,11 +1,13 @@
-import warnings 
 import numbers
-import numpy as np
+import warnings
+
 import geopandas as gpd
+import numpy as np
 from sklearn.cluster import MiniBatchKMeans
+
 from .base_classes import BaseSpatialCV
-from .grid_builder import construct_blocks, assign_pt_to_grid
-from .utils import geometry_to_2d, convert_geodataframe, load_custom_polygon
+from .grid_builder import assign_pt_to_grid, construct_blocks
+from .utils import convert_geodataframe, geometry_to_2d, load_custom_polygon
 
 __all__ = [
     "HBLOCK",

@@ -1,8 +1,11 @@
-from abc import ABC, abstractmethod, ABCMeta
-import numpy as np
+from abc import ABC, ABCMeta, abstractmethod
+
 import geopandas as gpd
+import numpy as np
 from sklearn.model_selection import BaseCrossValidator
-from .utils import convert_geoseries, convert_geodataframe
+
+from .utils import convert_geodataframe, convert_geoseries
+
 
 class BaseSpatialCV(BaseCrossValidator, metaclass=ABCMeta):
     """
