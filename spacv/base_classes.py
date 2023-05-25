@@ -44,8 +44,11 @@ class BaseSpatialCV(BaseCrossValidator, metaclass=ABCMeta):
         indices = XYs.index.values
         
         for test_indices, train_excluded in self._iter_test_indices(XYs):  
-            # Exclude the training indices within buffer
-            train_excluded = np.concatenate([test_indices, train_excluded])
+            if train_excluded.ndim and train_excluded.size:
+                # Exclude the training indices within buffer
+                train_excluded = np.concatenate([test_indices, train_excluded])
+            else:
+                train_excluded = test_indices
             train_index = np.setdiff1d(
                                 np.union1d(
                                     indices,
