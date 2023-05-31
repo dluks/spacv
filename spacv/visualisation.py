@@ -149,7 +149,7 @@ def plot_autocorrelation_ranges(XYs, X, lags, bw, **kwargs):
     for col in X.values.T:
         # Fit spherical model and extract effective range parameter
         semis = variogram_at_lag(XYs, col, lags, bw)
-        sv, h = semis[:, 0], semis[:, 1]
+        sv, h = semis[0], semis[1]
         start_params = [np.nanmax(h), np.nanmax(sv)]
         bounds = (0, start_params)
         cof, _ = curve_fit(
