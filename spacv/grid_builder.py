@@ -288,7 +288,15 @@ def assign_pt_to_grid(XYs, grid, distance_metric="euclidean", random_state=None)
     # In rare cases, points will sit at the border separating two grids
     if XYs["grid_id"].isna().any():
         # Find border pts and assign to nearest grid centroid
-        grid_centroid = grid.geometry.centroid
+        # First project to pseudo-mercator if using 4326
+        epsg = grid.crs.to_epsg()
+        if epsg == 4326:
+            grid = grid.to_crs(3857)
+            grid_centroid = grid.geometry.centroid
+            grid = grid.to_crs(epsg)  # return to original EPSG
+        else:
+            grid_centroid = grid.geometry.centroid
+
         grid_centroid = geometry_to_2d(grid_centroid)
         border_pt_index = XYs["grid_id"].isna()
         border_pts = XYs[border_pt_index].geometry

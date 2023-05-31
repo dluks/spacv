@@ -139,7 +139,16 @@ class HBLOCK(BaseSpatialCV):
             # Remove empty grids
             if len(test_indices) < 1:
                 continue
-            grid_poly_buffer = grid.loc[[grid_id]].buffer(self.buffer_radius)
+
+            epsg = grid.crs.to_epsg()
+            if epsg == 4326:
+                grid = grid.to_crs(3857)
+                grid_poly_buffer = grid.loc[[grid_id]].buffer(self.buffer_radius)
+                grid_poly_buffer = grid_poly_buffer.to_crs(epsg)
+                grid = grid.to_crs(epsg)  # return to original EPSG
+            else:
+                grid_poly_buffer = grid.loc[[grid_id]].buffer(self.buffer_radius)
+
             test_indices, train_exclude = super()._remove_buffered_indices(
                 XYs, test_indices, self.buffer_radius, grid_poly_buffer
             )
