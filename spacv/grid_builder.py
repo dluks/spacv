@@ -283,7 +283,7 @@ def assign_pt_to_grid(XYs, grid, distance_metric="euclidean", random_state=None)
     # Equate spatial reference systems if defined
     if not grid.crs == XYs.crs:
         grid.crs = XYs.crs
-    XYs = gpd.sjoin(XYs, grid, how="left", op="within")[["geometry", "grid_id"]]
+    XYs = gpd.sjoin(XYs, grid, how="left", predicate="within")[["geometry", "grid_id"]]
 
     # In rare cases, points will sit at the border separating two grids
     if XYs["grid_id"].isna().any():
