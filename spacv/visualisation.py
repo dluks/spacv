@@ -1,9 +1,15 @@
+import multiprocessing
+from typing import Tuple, Union
+
 import geopandas as gpd
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.axis import Axis
 from matplotlib.colors import ListedColormap
+from matplotlib.figure import Figure
 from scipy.optimize import curve_fit
 from scipy.spatial.distance import pdist, squareform
+from sklearn.metrics.pairwise import haversine_distances
 from sklearn.neighbors import BallTree
 
 from .utils import geometry_to_2d
@@ -24,7 +30,13 @@ __all__ = [
 ]
 
 
-def variogram_at_lag(XYs, x, lags, bw):
+def variogram_at_lag(
+    XYs: gpd.GeoSeries,
+    x: Union[list, np.ndarray],
+    lags: np.ndarray,
+    bw: Union[int, float],
+    distance_metric: str = "euclidean",
+) -> np.ndarray:
     """
     Return semivariance values for defined lag of distance.
 
@@ -38,6 +50,10 @@ def variogram_at_lag(XYs, x, lags, bw):
         Array of distance lags in metres to obtain semivariances.
     bw : integer or float
         Bandwidth, plus and minus lags to calculate semivariance.
+    distance_metric : string
+        Distance function to calculate pairwise distances. Must be "euclidean" for
+        points in euclidean space, or "haversine" for points in a geographic CRS.
+        Defaults to "euclidean".
 
     Returns
     -------
@@ -46,15 +62,23 @@ def variogram_at_lag(XYs, x, lags, bw):
     """
     XYs = geometry_to_2d(XYs)
     x = np.asarray(x)
-    paired_distances = pdist(XYs)
-    pd_m = squareform(paired_distances)
+
+    if distance_metric == "euclidean":
+        paired_distances = pdist(XYs)
+        pd_m = squareform(paired_distances)
+    elif distance_metric == "haversine":
+        pd_m = haversine_distances(np.radians([*XYs]))
+        pd_m = pd_m * 6371000  # multiply by Earth radius to get meters
+
     semivariances = np.empty((len(lags)), dtype=np.float64)
+
     for i, lag in enumerate(lags):
         # Mask pts outside bandwidth
         lower = pd_m >= lag - bw
         upper = pd_m <= lag + bw
         mask = np.logical_and(lower, upper)
         semivariances[i] = compute_semivariance(x, mask, bw)
+
     return np.c_[semivariances, lags].T
 
 
@@ -115,7 +139,29 @@ def spherical(h, r, sill, nugget=0):
         return nugget + sill
 
 
-def plot_autocorrelation_ranges(XYs, X, lags, bw, **kwargs):
+def calculate_range(args):
+    XYs, col, lags, bw, distance_metric = args
+    semis = variogram_at_lag(XYs, col, lags, bw, distance_metric)
+    sv, h = semis[0], semis[1]
+    start_params = [np.nanmax(h), np.nanmax(sv)]
+    bounds = (0, start_params)
+    cof, _ = curve_fit(
+        spherical, h, sv, sigma=None, p0=start_params, bounds=bounds, method="trf"
+    )
+    effective_range = cof[0]
+    return effective_range
+
+
+def plot_autocorrelation_ranges(
+    XYs: gpd.GeoSeries,
+    X: Union[np.ndarray, gpd.GeoDataFrame],
+    lags: np.ndarray,
+    bw: Union[int, float],
+    distance_metric: str = "euclidean",
+    workers: int = 1,
+    verbose: bool = False,
+    **kwargs,
+) -> Tuple[Figure, Axis, list]:
     """
     Plot spatial autocorrelation ranges for input covariates. Suggested
     block size is proposed by taking the median autocorrelation range
@@ -132,6 +178,14 @@ def plot_autocorrelation_ranges(XYs, X, lags, bw, **kwargs):
         Array of distance lags in metres to obtain semivariances.
     bw : integer or float
         Bandwidth, plus and minus lags to calculate semivariance.
+    distance_metric : string
+        Distance function to calculate pairwise distances. Must be "euclidean" for
+        points in euclidean space, or "haversine" for points in a geographic CRS.
+        Defaults to "euclidean".
+    workers : int
+        Use multiprocessing for >1 worker. -1 uses all available cores. Defaults to 1.
+    verbose : bool
+        Print name of current column being processed.
 
     Returns
     -------
@@ -139,6 +193,7 @@ def plot_autocorrelation_ranges(XYs, X, lags, bw, **kwargs):
         Figure of spatial weight network.
     ax : matplotlib Axes instance
         Axes in which the figure is plotted.
+    ranges : list
     """
     alpha = kwargs.pop("alpha", 0.7)
     font_size = kwargs.pop("font_size", 14)
@@ -146,17 +201,32 @@ def plot_autocorrelation_ranges(XYs, X, lags, bw, **kwargs):
     figsize = kwargs.pop("figsize", (8, 6))
 
     ranges = []
-    for col in X.values.T:
-        # Fit spherical model and extract effective range parameter
-        semis = variogram_at_lag(XYs, col, lags, bw)
-        sv, h = semis[0], semis[1]
-        start_params = [np.nanmax(h), np.nanmax(sv)]
-        bounds = (0, start_params)
-        cof, _ = curve_fit(
-            spherical, h, sv, sigma=None, p0=start_params, bounds=bounds, method="trf"
-        )
-        effective_range = cof[0]
-        ranges.append(effective_range)
+
+    if workers == -1 or workers > 1:
+        pool = multiprocessing.Pool(workers)
+        results = []
+
+        for i, col in enumerate(X.values.T):
+            if verbose:
+                print(f"{i}: {X.columns[i]}")
+            # Fit spherical model and extract effective range parameter
+            args = (XYs, col, lags, bw, distance_metric)
+            results.append(pool.apply_async(calculate_range, (args,)))
+
+        for result in results:
+            ranges.append(result.get())
+
+        pool.close()
+        pool.join()
+    else:
+        for i, col in enumerate(X.values.T):
+            if verbose:
+                print(f"{i}: {X.columns[i]}")
+            # Fit spherical model and extract effective range parameter
+            args = (XYs, col, lags, bw, distance_metric)
+            eff_range = calculate_range(args)
+            ranges.append(eff_range)
+
     x_labs = X.columns
     f, ax = plt.subplots(1, figsize=figsize)
     ax.bar(x_labs, ranges, color="skyblue", alpha=alpha)
@@ -171,7 +241,7 @@ def plot_autocorrelation_ranges(XYs, X, lags, bw, **kwargs):
         size=font_size,
     )
     ax.axhline(median_eff_range, color=block_suggestion_color, linestyle="--")
-    return f, ax
+    return f, ax, ranges
 
 
 def aoa(
@@ -323,3 +393,41 @@ def plot_aoa(
     ax[1].set_title("AOA")
 
     return f, ax
+
+
+def plot_variogram(
+    XYs: gpd.GeoSeries,
+    col: Union[gpd.GeoSeries, np.ndarray],
+    lags: np.ndarray,
+    bw: Union[int, float],
+    distance_metric: str = "euclidean",
+) -> np.ndarray:
+    """
+    Return semivariance values for defined lag of distance.
+
+    Parameters
+    ----------
+    XYs : Geoseries series
+        Series containing X and Y coordinates.
+    col : array or list
+        Array (N,) containing variable.
+    lags : array
+        Array of distance lags in metres to obtain semivariances.
+    bw : integer or float
+        Bandwidth, plus and minus lags to calculate semivariance.
+    distance_metric : string
+        Distance function to calculate pairwise distances. Must be "euclidean" for
+        points in euclidean space, or "haversine" for points in a geographic CRS.
+        Defaults to "euclidean".
+
+    Returns
+    -------
+    semis : Array of floats
+        Array of semivariances at defined lag points for given variable.
+    """
+    semis = variogram_at_lag(XYs, col, lags, bw, distance_metric)
+    sv, h = semis[0], semis[1]
+    plt.scatter(h, sv)
+    plt.show()
+
+    return semis
