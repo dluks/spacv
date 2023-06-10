@@ -1,3 +1,4 @@
+import logging
 import multiprocessing
 from typing import Tuple, Union
 
@@ -32,10 +33,11 @@ __all__ = [
 
 def variogram_at_lag(
     XYs: gpd.GeoSeries,
-    x: Union[list, np.ndarray],
+    x: Union[list, np.ndarray, gpd.GeoSeries],
     lags: np.ndarray,
     bw: Union[int, float],
     distance_metric: str = "euclidean",
+    col_name: str = None,
 ) -> np.ndarray:
     """
     Return semivariance values for defined lag of distance.
@@ -44,7 +46,7 @@ def variogram_at_lag(
     ----------
     XYs : Geoseries series
         Series containing X and Y coordinates.
-    X : array or list
+    X : array, list, or Geoseries
         Array (N,) containing variable.
     lags : array
         Array of distance lags in metres to obtain semivariances.
@@ -77,12 +79,12 @@ def variogram_at_lag(
         lower = pd_m >= lag - bw
         upper = pd_m <= lag + bw
         mask = np.logical_and(lower, upper)
-        semivariances[i] = compute_semivariance(x, mask, bw)
+        semivariances[i] = compute_semivariance(x, mask, bw, col_name)
 
     return np.c_[semivariances, lags].T
 
 
-def compute_semivariance(x, mask, bw):
+def compute_semivariance(x, mask, bw, col_name):
     """
     Calculate semivariance for masked elements.
     """
@@ -97,8 +99,14 @@ def compute_semivariance(x, mask, bw):
         if len(ss[filter_empty]) > 0:
             counts.append(len(ss[filter_empty]))
             semis.append(ss[filter_empty])
-    semivariance = np.sum(np.concatenate(semis)) / (2.0 * sum(counts))
-    return semivariance
+    try:
+        semivariance = np.sum(np.concatenate(semis)) / (2.0 * sum(counts))
+        return semivariance
+    except ValueError:
+        logging.error(
+            f"Could not calculate semivariances for {col_name}. Using 0 instead."
+        )
+        return 0
 
 
 def variogram(func):
@@ -140,8 +148,8 @@ def spherical(h, r, sill, nugget=0):
 
 
 def calculate_range(args):
-    XYs, col, lags, bw, distance_metric = args
-    semis = variogram_at_lag(XYs, col, lags, bw, distance_metric)
+    XYs, col, lags, bw, distance_metric, col_name = args
+    semis = variogram_at_lag(XYs, col, lags, bw, distance_metric, col_name)
     sv, h = semis[0], semis[1]
     start_params = [np.nanmax(h), np.nanmax(sv)]
     bounds = (0, start_params)
@@ -207,10 +215,11 @@ def plot_autocorrelation_ranges(
         results = []
 
         for i, col in enumerate(X.values.T):
+            col_name = X.columns[i]
             if verbose:
-                print(f"{i}: {X.columns[i]}")
+                print(f"{i}: {col_name}")
             # Fit spherical model and extract effective range parameter
-            args = (XYs, col, lags, bw, distance_metric)
+            args = (XYs, col, lags, bw, distance_metric, col_name)
             results.append(pool.apply_async(calculate_range, (args,)))
 
         for result in results:
@@ -220,10 +229,11 @@ def plot_autocorrelation_ranges(
         pool.join()
     else:
         for i, col in enumerate(X.values.T):
+            col_name = X.columns[i]
             if verbose:
-                print(f"{i}: {X.columns[i]}")
+                print(f"{i}: {col_name}")
             # Fit spherical model and extract effective range parameter
-            args = (XYs, col, lags, bw, distance_metric)
+            args = (XYs, col, lags, bw, distance_metric, col_name)
             eff_range = calculate_range(args)
             ranges.append(eff_range)
 
