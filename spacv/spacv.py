@@ -1,5 +1,6 @@
 import numbers
 import warnings
+from typing import Optional, Union
 
 import geopandas as gpd
 import numpy as np
@@ -69,17 +70,17 @@ class HBLOCK(BaseSpatialCV):
 
     def __init__(
         self,
-        tiles_x=5,
-        tiles_y=5,
-        shape="square",
-        method="unique",
-        buffer_radius=0,
-        direction="diagonal",
-        n_groups=5,
-        data=None,
-        n_sims=10,
-        distance_metric="euclidean",
-        random_state=None,
+        tiles_x: int = 5,
+        tiles_y: int = 5,
+        shape: str = "square",
+        method: str = "unique",
+        buffer_radius: Union[int, float] = 0,
+        direction: str = "diagonal",
+        n_groups: int = 5,
+        data: Optional[np.ndarray] = None,
+        n_sims: int = 10,
+        distance_metric: str = "euclidean",
+        random_state: Optional[int] = None,
     ):
         self.tiles_x = tiles_x
         self.tiles_y = tiles_y
