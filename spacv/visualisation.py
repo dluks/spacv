@@ -65,6 +65,17 @@ def variogram_at_lag(
     XYs = geometry_to_2d(XYs)
     x = np.asarray(x)
 
+    # Remove nans from x and XYs for variogram calculation
+    nan_idx = np.isnan(x)
+    x = x[~nan_idx]
+    XYs = XYs[~nan_idx]
+
+    # Select only 30000 random points from x and XYs to calculate pairwise distances
+    if len(x) > 30000:
+        idx = np.random.choice(len(x), 30000, replace=False)
+        x = x[idx]
+        XYs = XYs[idx]
+
     if distance_metric == "euclidean":
         paired_distances = pdist(XYs)
         pd_m = squareform(paired_distances)
@@ -318,7 +329,7 @@ def aoa(
         folds = np.vstack((fold_indices, instance_fold_id)).T
 
         # Mask training points in same fold for DI measure calculation
-        for i, row in enumerate(train_dist):
+        for i, _ in enumerate(train_dist):
             mask = folds[:, 0] == folds[:, 0][i]
             train_dist[i, mask] = np.nan
 
