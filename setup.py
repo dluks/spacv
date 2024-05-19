@@ -14,7 +14,7 @@ setup(
     description="Spatial cross-validation in Python",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/SamComber/spacv",
+    url="https://github.com/dluks/spacv",
     author="Sam Comber",
     author_email="sam.comber@hotmail.co.uk",
     license="3-Clause BSD",
